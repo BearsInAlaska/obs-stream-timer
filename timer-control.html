@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stream Timer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #1d1f26; --panel: #262932; --field: #31343e; --field-hi: #3a3e4a; --line: #3a3d48;
+    --text: #e8e8ee; --muted: #9a9cab; --accent: #9b44b8; --accent-hi: #b25bd0; --on-accent: #ffffff; --accent-text: #b25bd0; --accent-soft: #cdb6e6; --ok: #3ecf8e; --warn: #f0b429; --bad: #ef5d6c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.35 "Segoe UI", system-ui, sans-serif; }
+  body { padding: 10px; min-width: 260px; }
+  button, input { font: inherit; color: inherit; }
+  .card { background: var(--panel); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+  .card h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  details.card > summary { list-style: none; cursor: pointer; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary h2 { margin: 0; }
+  details.card[open] > summary h2 { margin-bottom: 8px; }
+  details.card > summary h2::after { content: "▸"; transition: transform .15s; }
+  details.card[open] > summary h2::after { transform: rotate(90deg); }
+
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .top b { font-size: 14px; }
+  .status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
+  .preview { height: 92px; border-radius: 8px; overflow: hidden; margin-bottom: 10px;
+    background: repeating-conic-gradient(#2c2f38 0 25%, #252830 0 50%) 0 0/16px 16px; }
+  .preview iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+  .transport { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .btn { background: var(--field); border: 1px solid transparent; border-radius: 7px; padding: 7px 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn:hover { background: var(--field-hi); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 14px; padding: 10px; }
+  .btn.primary:hover { background: var(--accent-hi); }
+  .btn.full { width: 100%; }
+  .btn svg { width: 16px; height: 16px; fill: currentColor; }
+  .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
+  .quick .btn { padding: 5px 0; font-size: 12px; }
+
+  .row { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+  .row > label:first-child, .row > .lbl { flex: 0 0 84px; color: var(--muted); }
+  .row .grow { flex: 1; min-width: 0; }
+  input[type=text], input[type=password], input[type=number] {
+    background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; width: 100%; outline: none; }
+  input:focus { border-color: var(--accent); }
+  input[type=color] { -webkit-appearance: none; width: 30px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; flex: 0 0 auto; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+  input[type=range] { -webkit-appearance: none; flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--field-hi); outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent-hi); cursor: pointer; }
+  .val { flex: 0 0 38px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+  .seg { display: flex; background: var(--field); border-radius: 7px; padding: 2px; flex: 1; }
+  .seg button { flex: 1; background: none; border: 0; border-radius: 5px; padding: 4px 6px; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: var(--accent); color: var(--on-accent); }
+
+  .switch { position: relative; width: 34px; height: 19px; flex: 0 0 auto; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; background: var(--field-hi); border-radius: 10px; cursor: pointer; transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 13px; height: 13px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(15px); }
+
+  .chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1; }
+  .chip { position: relative; }
+  .chip input { position: absolute; opacity: 0; }
+  .chip span { display: block; text-align: center; padding: 5px 0; border-radius: 6px; background: var(--field); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 600; }
+  .chip input:checked + span { background: var(--accent); color: var(--on-accent); }
+
+  /* 9-point alignment picker */
+  .align { display: grid; grid-template-columns: repeat(3, 26px); grid-template-rows: repeat(3, 20px); gap: 3px; padding: 4px; background: var(--field); border-radius: 7px; }
+  .align button { border: 0; border-radius: 4px; background: var(--field-hi); cursor: pointer; padding: 0; position: relative; }
+  .align button::after { content: ""; position: absolute; inset: 6px 8px; border-radius: 2px; background: var(--muted); opacity: .5; }
+  .align button.on { background: var(--accent); }
+  .align button.on::after { background: var(--on-accent); opacity: 1; }
+  .align-wrap { display: flex; gap: 10px; align-items: center; flex: 1; }
+  .align-wrap .edge { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+  .align-wrap .edge > div { display: flex; align-items: center; gap: 6px; }
+
+  /* custom dropdowns (OBS docks can't show native suggestion lists) */
+  .dd { position: relative; flex: 1; min-width: 0; }
+  .dd-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px; background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; cursor: pointer; text-align: left; }
+  .dd-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-btn::after { content: "▾"; color: var(--muted); flex: 0 0 auto; }
+  .dd.open .dd-btn { border-color: var(--accent); }
+  .dd-pop { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 50; background: #2c2f39; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.5); padding: 4px; }
+  .dd.open .dd-pop { display: block; }
+  .dd-pop input { margin-bottom: 4px; }
+  .dd-list { max-height: 240px; overflow-y: auto; }
+  .dd-item { padding: 6px 8px; border-radius: 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dd-item:hover, .dd-item.hl { background: var(--field-hi); }
+  .dd-item.on { color: var(--accent-text); font-weight: 600; }
+  .dd-item small { color: var(--muted); font-family: "Segoe UI", sans-serif; font-weight: 400; margin-left: 6px; font-size: 11px; }
+  .dd-group { padding: 6px 8px 2px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .dd-empty { padding: 8px; color: var(--muted); font-size: 12px; }
+  .dd-list::-webkit-scrollbar { width: 8px; } .dd-list::-webkit-scrollbar-thumb { background: var(--field-hi); border-radius: 4px; }
+
+  .time-set { display: flex; align-items: center; gap: 4px; flex: 1; }
+  .time-set input { text-align: center; padding: 5px 2px; }
+  .time-set i { color: var(--muted); font-style: normal; }
+  .note { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
+  .dim { opacity: .4; pointer-events: none; }
+  .url { font: 11px/1.4 Consolas, monospace; background: var(--field); border-radius: 6px; padding: 6px; word-break: break-all; user-select: all; color: var(--accent-soft); }
+  .hidden { display: none !important; }
+
+  /* panel highlight color picker */
+  .hex { font-family: Consolas, monospace; text-transform: uppercase; }
+  .hex.bad { border-color: var(--bad) !important; }
+  .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin: 2px 0 8px; }
+  .swatches button { aspect-ratio: 1; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 2px var(--panel); }
+  .swatches button:hover { border-color: var(--muted); }
+  .swatches button.on { border-color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <b>Stream Timer</b>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Connecting…</span></div>
+</div>
+
+<div class="preview"><iframe id="preview" title="Overlay preview"></iframe></div>
+
+<div class="card">
+  <div class="transport">
+    <button class="btn primary" id="play" style="grid-column: span 2">
+      <svg id="icoPlay" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>
+      <svg id="icoPause" class="hidden" viewBox="0 0 24 24"><rect x="5.5" y="4" width="4.5" height="16" rx="1.2"/><rect x="14" y="4" width="4.5" height="16" rx="1.2"/></svg>
+      <span id="playTxt">Play</span>
+    </button>
+    <button class="btn" id="reset"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 1 1-6.6 4.7 1 1 0 1 1 1.9.6A5 5 0 1 0 12 7h-1.6l1.3 1.3a1 1 0 0 1-1.4 1.4L7.3 6.7a1 1 0 0 1 0-1.4l3-3a1 1 0 0 1 1.4 1.4L10.4 5z"/></svg>Reset</button>
+    <button class="btn" id="testAlert">Test alert</button>
+  </div>
+  <div class="quick">
+    <button class="btn" data-add="-60000">−1m</button>
+    <button class="btn" data-add="60000">+1m</button>
+    <button class="btn" data-add="300000">+5m</button>
+    <button class="btn" data-add="600000">+10m</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Timer</h2>
+  <div class="row"><label>Mode</label>
+    <div class="seg" data-key="timer.mode"><button data-v="down">Countdown</button><button data-v="up">Count up</button></div>
+  </div>
+  <div class="row" id="setRow"><label>Start from</label>
+    <div class="time-set">
+      <input type="number" id="setH" min="0" max="99" value="0"><i>:</i>
+      <input type="number" id="setM" min="0" max="59" value="5"><i>:</i>
+      <input type="number" id="setS" min="0" max="59" value="0">
+    </div>
+  </div>
+  <button class="btn full" id="applyTime">Set time</button>
+  <div class="row" style="margin-top:10px"><label>Show</label>
+    <div class="chips">
+      <label class="chip"><input type="checkbox" data-key="style.units.h"><span>HH</span></label>
+      <label class="chip"><input type="checkbox" data-key="style.units.m"><span>MM</span></label>
+      <label class="chip"><input type="checkbox" data-key="style.units.s"><span>SS</span></label>
+      <label class="chip"><input type="checkbox" data-key="style.units.ms"><span>.MS</span></label>
+    </div>
+  </div>
+</div>
+
+<details class="card" open>
+  <summary><h2>Position</h2></summary>
+  <div class="row">
+    <div class="align-wrap">
+      <div class="align" id="align">
+        <button data-v="tl" title="Top left"></button><button data-v="tc" title="Top center"></button><button data-v="tr" title="Top right"></button>
+        <button data-v="ml" title="Middle left"></button><button data-v="mc" title="Center"></button><button data-v="mr" title="Middle right"></button>
+        <button data-v="bl" title="Bottom left"></button><button data-v="bc" title="Bottom center"></button><button data-v="br" title="Bottom right"></button>
+      </div>
+      <div class="edge">Edge spacing<div><input type="range" min="0" max="200" data-key="style.edge"><span class="val" data-for="style.edge" data-unit="px"></span></div></div>
+    </div>
+  </div>
+  <p class="note">The timer grows away from this point, so a long “Time’s up” message never runs off the side.</p>
+</details>
+
+<details class="card" open>
+  <summary><h2>Frame</h2></summary>
+  <div class="row"><label>Corners</label>
+    <div class="seg" data-key="style.corners"><button data-v="straight">Straight</button><button data-v="round">Round</button></div>
+  </div>
+  <div class="row" id="radiusRow"><label>Roundness</label><input type="range" min="2" max="120" data-key="style.radius"><span class="val" data-for="style.radius"></span></div>
+  <div class="row"><label>Background</label><input type="color" data-key="style.bg"><input type="range" min="0" max="100" data-key="style.bgOpacity"><span class="val" data-for="style.bgOpacity" data-unit="%"></span></div>
+  <div class="row"><label>Stroke</label><label class="switch"><input type="checkbox" data-key="style.stroke"><span></span></label><input type="color" data-key="style.strokeColor" class="strokeDep"><input type="range" min="1" max="40" data-key="style.strokeWidth" class="strokeDep"><span class="val strokeDep" data-for="style.strokeWidth" data-unit="px"></span></div>
+  <div class="row"><label>Drop shadow</label><label class="switch"><input type="checkbox" data-key="style.shadow"><span></span></label><input type="range" min="5" max="100" data-key="style.shadowOpacity" class="shadowDep"><span class="val shadowDep" data-for="style.shadowOpacity" data-unit="%"></span></div>
+  <div class="row"><label>Padding ↔</label><input type="range" min="0" max="160" data-key="style.padX"><span class="val" data-for="style.padX" data-unit="px"></span></div>
+  <div class="row"><label>Padding ↕</label><input type="range" min="0" max="120" data-key="style.padY"><span class="val" data-for="style.padY" data-unit="px"></span></div>
+</details>
+
+<details class="card" open>
+  <summary><h2>Text</h2></summary>
+  <div class="row"><label>Font</label><div class="dd" id="ddFont"></div></div>
+  <p class="note" id="fontNote">Showing fonts found on this PC. Not listed? Type its exact name in the search box and press Enter.</p>
+  <button class="btn full hidden" id="scanFonts" style="margin-top:6px">Scan all installed fonts</button>
+  <div class="row"><label>Weight</label>
+    <div class="seg" data-key="style.weight"><button data-v="400">Reg</button><button data-v="600">Semi</button><button data-v="700">Bold</button><button data-v="900">Black</button></div>
+  </div>
+  <div class="row"><label>Color</label><input type="color" data-key="style.textColor"></div>
+  <div class="row"><label>Size</label><input type="range" min="16" max="300" data-key="style.size"><span class="val" data-for="style.size" data-unit="px"></span></div>
+</details>
+
+<details class="card" open>
+  <summary><h2>Timer done alert</h2></summary>
+  <div class="row"><label>Style</label><div class="dd" id="ddAlert"></div></div>
+  <div class="row" id="msgRow"><label>Message</label><input type="text" class="grow" data-key="alert.message"></div>
+  <div class="row" id="flashRow"><label>Flash color</label><input type="color" data-key="alert.flashColor"></div>
+  <div class="row"><label>Sound</label><div class="dd" id="ddSound"></div></div>
+  <div class="row hidden" id="customRow"><label>Your file</label>
+    <button class="btn grow" id="pickFile">Choose file…</button>
+    <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.ogg,.m4a" class="hidden">
+  </div>
+  <div class="row hidden" id="pathRow"><label>File path</label><input type="text" class="grow" data-key="alert.soundPath" placeholder="D:\Sounds\ding.mp3" spellcheck="false"></div>
+  <p class="note hidden" id="soundNote"></p>
+  <div class="row soundDep"><label>Volume</label><input type="range" min="0" max="100" data-key="alert.volume"><span class="val" data-for="alert.volume" data-unit="%"></span></div>
+  <button class="btn full soundDep" id="previewSound">▶ Preview sound</button>
+</details>
+
+<details class="card" id="themeCard">
+  <summary><h2>UI Color</h2></summary>
+  <div class="row"><label>Highlight</label>
+    <input type="color" id="accentPick" title="Pick from the color wheel">
+    <input type="text" id="accentHex" class="grow hex" maxlength="7" spellcheck="false" placeholder="#9B44B8" title="Type a hex code, e.g. #E0457B">
+  </div>
+  <div class="swatches" id="swatches"></div>
+  <button class="btn full" id="accentReset">Reset to default</button>
+  <p class="note">Only changes this control panel. The on-stream timer keeps its own colors (set them under Frame and Text).</p>
+</details>
+
+<details class="card" id="connCard">
+  <summary><h2>Connection</h2></summary>
+  <p class="note" style="margin-top:0">Uses OBS's WebSocket server. Find the password in OBS under <b>Tools → WebSocket Server Settings → Show Connect Info</b>.</p>
+  <div class="row"><label>Password</label><input type="password" class="grow" id="pw" autocomplete="off"></div>
+  <div class="row"><label>Port</label><input type="number" class="grow" id="port" value="4455"></div>
+  <button class="btn full" id="connect">Save &amp; connect</button>
+  <p class="note">Overlay URL — paste this into your Browser Source (with <b>Local file</b> unchecked):</p>
+  <div class="url" id="overlayUrl"></div>
+  <button class="btn full" id="copyUrl" style="margin-top:6px">Copy overlay URL</button>
+</details>
+
+<script src="sounds/sounds.js"></script>
+<script>
+/* ===== Stream Timer — shared core (inlined into both files) ===== */
+const AQ = (() => {
+  /* ---------- SHA-256 (pure JS, needed for OBS WebSocket auth) ---------- */
+  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  function sha256(bytes) {
+    const l = bytes.length, bitLen = l * 8;
+    const n = ((l + 9 + 63) >> 6) << 6;
+    const m = new Uint8Array(n); m.set(bytes); m[l] = 0x80;
+    const dv = new DataView(m.buffer);
+    dv.setUint32(n - 4, bitLen >>> 0); dv.setUint32(n - 8, Math.floor(bitLen / 2 ** 32));
+    let h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+    const w = new Uint32Array(64);
+    const r = (x, k) => (x >>> k) | (x << (32 - k));
+    for (let o = 0; o < n; o += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = r(w[i-15],7) ^ r(w[i-15],18) ^ (w[i-15] >>> 3);
+        const s1 = r(w[i-2],17) ^ r(w[i-2],19) ^ (w[i-2] >>> 10);
+        w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+      }
+      let [a,b,c,d,e,f,g,hh] = h;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (hh + (r(e,6) ^ r(e,11) ^ r(e,25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+        const t2 = ((r(a,2) ^ r(a,13) ^ r(a,22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+        hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      h = [h[0]+a,h[1]+b,h[2]+c,h[3]+d,h[4]+e,h[5]+f,h[6]+g,h[7]+hh].map(x => x >>> 0);
+    }
+    const out = new Uint8Array(32); const odv = new DataView(out.buffer);
+    h.forEach((x, i) => odv.setUint32(i * 4, x)); return out;
+  }
+  const utf8 = s => new TextEncoder().encode(s);
+  const b64 = bytes => { let s = ''; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+  const obsAuth = (pw, salt, challenge) => b64(sha256(utf8(b64(sha256(utf8(pw + salt))) + challenge)));
+
+  /* ---------- Defaults ---------- */
+  const DEFAULTS = {
+    timer: { mode: 'down', duration: 5 * 60000, running: false, startedAt: 0, accumulated: 0 },
+    style: {
+      corners: 'round', radius: 28,
+      bg: '#ffffff', bgOpacity: 100,
+      stroke: true, strokeColor: '#84299a', strokeWidth: 8,
+      shadow: false, shadowOpacity: 40,
+      font: 'Rockwell Extra Bold', weight: 900, textColor: '#000000',
+      size: 96, padX: 48, padY: 14,
+      align: 'mc', edge: 20,
+      units: { h: true, m: true, s: true, ms: true }
+    },
+    alert: { type: 'flashmsg', message: "TIME'S UP!", flashColor: '#84299a', sound: 'chime', volume: 80, soundPath: '', customName: '' }
+  };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  function merge(base, over) {
+    const out = clone(base);
+    (function m(a, b) { for (const k in b) {
+      if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object') m(a[k], b[k]);
+      else if (k in a) a[k] = b[k];
+    } })(out, over || {});
+    return out;
+  }
+
+  /* ---------- Time ---------- */
+  function elapsed(t, now = Date.now()) { return t.accumulated + (t.running ? now - t.startedAt : 0); }
+  function value(t, now) {  // ms to show
+    const e = elapsed(t, now);
+    return t.mode === 'down' ? Math.max(0, t.duration - e) : e;
+  }
+  function format(ms, units, mode) {
+    let u = { ...units }; if (!u.h && !u.m && !u.s && !u.ms) u.s = true;
+    if (u.ms && !u.s && !u.m && !u.h) u.s = true;
+    const g = u.ms ? 10 : u.s ? 1000 : u.m ? 60000 : 3600000;
+    ms = mode === 'down' ? Math.ceil(ms / g) * g : Math.floor(ms / g) * g;
+    const p2 = n => String(n).padStart(2, '0');
+    // leftmost shown unit carries the total; the rest wrap normally
+    const order = ['h','m','s'].filter(k => u[k]);
+    const sizes = { h: 3600000, m: 60000, s: 1000 }, mods = { m: 60, s: 60 };
+    const out = order.map((k, i) => p2(i === 0 ? Math.floor(ms / sizes[k]) : Math.floor(ms / sizes[k]) % mods[k]));
+    let s = out.join(':');
+    if (u.ms) s += '.' + p2(Math.floor((ms % 1000) / 10));
+    return s;
+  }
+
+  /* ---------- Message bus: OBS WebSocket + same-browser fallbacks ---------- */
+  const CH = 'aq-stream-timer';
+  class Bus {
+    constructor({ pw = '', port = 4455, onMessage = () => {}, onStatus = () => {} }) {
+      Object.assign(this, { pw, port, onMessage, onStatus, ws: null, ok: false, rid: 0, closed: false });
+      try { this.bc = new BroadcastChannel(CH); this.bc.onmessage = e => this.onMessage(e.data); } catch (e) {}
+      try { addEventListener('storage', e => { if (e.key === CH && e.newValue) this.onMessage(JSON.parse(e.newValue)); }); } catch (e) {}
+      this.connect();
+    }
+    setCreds(pw, port) { this.pw = pw; this.port = port; try { this.ws && this.ws.close(); } catch (e) {} this.connect(); }
+    connect() {
+      clearTimeout(this.retry);
+      if (!this.pw && this.pw !== null) { this.onStatus('no-password'); }
+      let ws;
+      try { ws = new WebSocket('ws://127.0.0.1:' + this.port); } catch (e) { this.onStatus('offline'); return; }
+      this.ws = ws; this.ok = false;
+      ws.onmessage = async ev => {
+        const m = JSON.parse(ev.data);
+        if (m.op === 0) {
+          const d = { rpcVersion: 1, eventSubscriptions: 1 };
+          if (m.d.authentication) {
+            if (!this.pw) { this.onStatus('no-password'); ws.close(); return; }
+            d.authentication = obsAuth(this.pw, m.d.authentication.salt, m.d.authentication.challenge);
+          }
+          ws.send(JSON.stringify({ op: 1, d }));
+        } else if (m.op === 2) {
+          this.ok = true; this.onStatus('connected'); this.onReady && this.onReady();
+        } else if (m.op === 5 && m.d.eventType === 'CustomEvent' && m.d.eventData && m.d.eventData.aqTimer) {
+          this.onMessage(m.d.eventData.aqTimer);
+        }
+      };
+      ws.onclose = ev => {
+        this.ok = false;
+        if (ev.code === 4009) { this.onStatus('auth-failed'); this.retry = setTimeout(() => this.connect(), 10000); }
+        else { this.onStatus(this.pw ? 'offline' : 'no-password'); this.retry = setTimeout(() => this.connect(), 3000); }
+      };
+      ws.onerror = () => {};
+    }
+    send(msg, { local = true } = {}) {
+      if (this.ok) this.ws.send(JSON.stringify({ op: 6, d: { requestType: 'BroadcastCustomEvent', requestId: 'aq' + (++this.rid), requestData: { eventData: { aqTimer: msg } } } }));
+      if (local) {
+        try { this.bc && this.bc.postMessage(msg); } catch (e) {}
+        try { if (msg.t === 'state') localStorage.setItem(CH, JSON.stringify(msg)); } catch (e) {}
+      }
+    }
+  }
+  function storedState() { try { const m = JSON.parse(localStorage.getItem(CH)); return m && m.state; } catch (e) { return null; } }
+
+  /* ---------- Alert sounds (shared by overlay + panel preview) ---------- */
+  function fileUrl(p) {
+    p = (p || '').trim().replace(/^"|"$/g, '');
+    if (!p) return '';
+    if (/^(file|https?):/i.test(p)) return p;
+    if (/^[a-z]:[\\/]/i.test(p) || p.startsWith('\\\\')) return 'file:///' + encodeURI(p.replace(/\\/g, '/')).replace(/#/g, '%23');
+    return encodeURI(p).replace(/#/g, '%23');   // relative, e.g. sounds/bell.mp3
+  }
+  let actx;
+  function chime(vol) {
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = actx.currentTime;
+      [880, 1175, 1568].forEach((f, i) => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0, t0 + i * .18); g.gain.linearRampToValueAtTime(.4 * vol, t0 + i * .18 + .02);
+        g.gain.exponentialRampToValueAtTime(.001, t0 + i * .18 + .6);
+        o.connect(g).connect(actx.destination); o.start(t0 + i * .18); o.stop(t0 + i * .18 + .65);
+      });
+    } catch (e) {}
+  }
+  let current;
+  function playSound(alert, customData) {
+    const vol = Math.max(0, Math.min(1, (alert.volume ?? 80) / 100));
+    try { current && current.pause(); } catch (e) {}
+    const id = alert.sound;
+    if (!id || id === 'none') return;
+    if (id === 'chime') return chime(vol);
+    const src = id === 'custom' ? customData : id === 'path' ? fileUrl(alert.soundPath) : fileUrl(id);
+    if (!src) return;
+    try { current = new Audio(src); current.volume = vol; current.play().catch(() => {}); } catch (e) {}
+  }
+
+  return { fileUrl, playSound, DEFAULTS, merge, clone, elapsed, value, format, Bus, storedState, sha256, obsAuth };
+})();
+
+(() => {
+  const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+  const KEY = 'aq-stream-timer-control', SKEY = 'aq-stream-timer-sound';
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+  let state = AQ.merge(AQ.DEFAULTS, saved.state || {});
+  if (typeof state.alert.sound === 'boolean') state.alert.sound = state.alert.sound ? 'chime' : 'none'; // v1 settings
+  let creds = { pw: saved.pw || '', port: saved.port || 4455 };
+  let customSound = ''; try { customSound = localStorage.getItem(SKEY) || ''; } catch (e) {}
+  const get = (p) => p.split('.').reduce((o, k) => o[k], state);
+  const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => o[k], state)[last] = v; };
+
+  /* ---------- persistence + broadcast ---------- */
+  const preview = $('#preview');
+  preview.src = 'timer-overlay.html?embed=1';
+  let pending = false, testFlag = false;
+  function push(test = false) {
+    testFlag = testFlag || test;
+    if (pending) return; pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      const msg = { t: 'state', state, test: testFlag }; testFlag = false;
+      bus.send(msg);
+      try { preview.contentWindow.postMessage(msg, '*'); } catch (e) {}
+      try { localStorage.setItem(KEY, JSON.stringify({ state, ...creds, customFonts })); } catch (e) {}
+    });
+  }
+  function pushSound() { if (customSound) bus.send({ t: 'sound', data: customSound }); }
+  preview.addEventListener('load', () => push());
+
+  /* ---------- connection ---------- */
+  const statusMap = {
+    'connected': ['ok', 'Connected to OBS'],
+    'offline': ['', 'OBS WebSocket offline'],
+    'auth-failed': ['', 'Wrong password'],
+    'no-password': ['warn', 'Add password ↓'],
+  };
+  const bus = new AQ.Bus({
+    pw: creds.pw, port: creds.port,
+    onMessage: m => { if (m && m.t === 'hello') { push(); pushSound(); } },
+    onStatus: s => {
+      const [cls, txt] = statusMap[s] || ['', s];
+      $('#dot').className = 'dot ' + cls; $('#statusTxt').textContent = txt;
+      if (s === 'no-password' || s === 'auth-failed') $('#connCard').open = true;
+    }
+  });
+  bus.onReady = () => { push(); pushSound(); };
+  function overlayUrl() {
+    const base = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '') + 'timer-overlay.html';
+    const q = new URLSearchParams(); if (creds.pw) q.set('pw', creds.pw); if (+creds.port !== 4455) q.set('port', creds.port);
+    return base + (q.toString() ? '?' + q : '');
+  }
+  function showUrl() { $('#overlayUrl').textContent = overlayUrl(); }
+  $('#pw').value = creds.pw; $('#port').value = creds.port; showUrl();
+  $('#connect').onclick = () => {
+    creds = { pw: $('#pw').value, port: +$('#port').value || 4455 };
+    bus.setCreds(creds.pw, creds.port); showUrl(); push();
+  };
+  $('#copyUrl').onclick = async () => {
+    const u = overlayUrl();
+    try { await navigator.clipboard.writeText(u); }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($('#overlayUrl')); getSelection().removeAllRanges(); getSelection().addRange(r); document.execCommand('copy'); }
+    $('#copyUrl').textContent = 'Copied!'; setTimeout(() => $('#copyUrl').textContent = 'Copy overlay URL', 1400);
+  };
+
+  /* ---------- transport ---------- */
+  const now = () => Date.now();
+  function playPause() {
+    const t = state.timer;
+    if (t.running) { t.accumulated += now() - t.startedAt; t.running = false; }
+    else {
+      if (t.mode === 'down' && AQ.value(t) === 0) t.accumulated = 0;
+      t.startedAt = now(); t.running = true;
+    }
+    push(); syncTransport();
+  }
+  function reset() { const t = state.timer; t.running = false; t.accumulated = 0; t.startedAt = 0; push(); syncTransport(); }
+  function addTime(ms) {
+    const t = state.timer;
+    if (t.mode === 'down') t.duration = Math.max(0, t.duration + ms);
+    else t.accumulated = Math.max(-AQ.elapsed(t) + t.accumulated, t.accumulated + ms);
+    push(); syncTransport();
+  }
+  function syncTransport() {
+    const r = state.timer.running;
+    $('#icoPlay').classList.toggle('hidden', r); $('#icoPause').classList.toggle('hidden', !r);
+    const done = state.timer.mode === 'down' && AQ.value(state.timer) === 0 && state.timer.duration > 0;
+    $('#playTxt').textContent = r ? 'Pause' : done ? 'Restart' : (state.timer.accumulated > 0 ? 'Resume' : 'Play');
+  }
+  $('#play').onclick = playPause; $('#reset').onclick = reset;
+  $('#testAlert').onclick = () => push(true);
+  $$('[data-add]').forEach(b => b.onclick = () => addTime(+b.dataset.add));
+  $('#applyTime').onclick = () => {
+    const ms = ((+$('#setH').value || 0) * 3600 + (+$('#setM').value || 0) * 60 + (+$('#setS').value || 0)) * 1000;
+    const t = state.timer;
+    if (t.mode === 'down') { t.duration = ms; t.accumulated = 0; } else { t.accumulated = ms; }
+    if (t.running) t.startedAt = now();
+    push(); syncTransport();
+  };
+  function fillSetFields() {
+    const s = Math.round(state.timer.duration / 1000);
+    $('#setH').value = Math.floor(s / 3600); $('#setM').value = Math.floor(s / 60) % 60; $('#setS').value = s % 60;
+  }
+  setInterval(() => {
+    const t = state.timer;
+    if (t.running && t.mode === 'down' && AQ.value(t) === 0) { t.accumulated = t.duration; t.running = false; push(); syncTransport(); }
+  }, 100);
+
+  /* ---------- custom dropdown ---------- */
+  function Dropdown(el, { items, value, onPick, search = false, fontPreview = false, allowCustom = false, placeholder = 'Search…' }) {
+    el.innerHTML = `<button class="dd-btn" type="button"><span></span></button><div class="dd-pop">${search ? `<input type="text" spellcheck="false" placeholder="${placeholder}">` : ''}<div class="dd-list"></div></div>`;
+    const btn = el.querySelector('.dd-btn'), lab = btn.querySelector('span'), pop = el.querySelector('.dd-pop'),
+          inp = el.querySelector('input'), list = el.querySelector('.dd-list');
+    let hl = -1, shown = [];
+    const api = {
+      setItems(i) { items = i; if (el.classList.contains('open')) draw(); api.setValue(value()); },
+      setValue(v) {
+        const it = items().find(x => x.value === v);
+        lab.textContent = it ? it.label : v;
+        if (fontPreview) lab.style.fontFamily = `"${v}", "Segoe UI", sans-serif`;
+      }
+    };
+    function draw() {
+      const q = inp ? inp.value.trim().toLowerCase() : '';
+      shown = items().filter(x => !q || x.label.toLowerCase().includes(q));
+      let html = '', group = null;
+      shown.forEach((x, i) => {
+        if (x.group && x.group !== group && !q) { group = x.group; html += `<div class="dd-group">${x.group}</div>`; }
+        const style = fontPreview ? ` style="font-family:&quot;${x.value.replace(/"/g, '')}&quot;, 'Segoe UI', sans-serif"` : '';
+        html += `<div class="dd-item${x.value === value() ? ' on' : ''}${i === hl ? ' hl' : ''}" data-i="${i}"${style}>${esc(x.label)}${x.hint ? `<small>${esc(x.hint)}</small>` : ''}</div>`;
+      });
+      if (!shown.length) html = `<div class="dd-empty">${allowCustom && q ? `Press Enter to use “${esc(inp.value.trim())}”` : 'No matches'}</div>`;
+      list.innerHTML = html;
+      const on = list.querySelector('.hl') || list.querySelector('.on');
+      if (on) on.scrollIntoView({ block: 'nearest' });
+    }
+    function open() { $$('.dd.open').forEach(d => d !== el && d.classList.remove('open')); el.classList.add('open'); hl = -1; if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 0); } draw(); }
+    function close() { el.classList.remove('open'); }
+    function pick(v) { close(); onPick(v); api.setValue(v); }
+    btn.onclick = () => el.classList.contains('open') ? close() : open();
+    list.onmousedown = e => e.preventDefault();
+    list.onclick = e => { const d = e.target.closest('.dd-item'); if (d) pick(shown[+d.dataset.i].value); };
+    if (inp) {
+      inp.oninput = () => { hl = 0; draw(); };
+      inp.onkeydown = e => {
+        if (e.key === 'ArrowDown') { hl = Math.min(shown.length - 1, hl + 1); draw(); e.preventDefault(); }
+        else if (e.key === 'ArrowUp') { hl = Math.max(0, hl - 1); draw(); e.preventDefault(); }
+        else if (e.key === 'Enter') { if (shown[hl]) pick(shown[hl].value); else if (shown.length === 1) pick(shown[0].value); else if (allowCustom && inp.value.trim()) pick(inp.value.trim()); }
+        else if (e.key === 'Escape') close();
+      };
+    }
+    document.addEventListener('mousedown', e => { if (!el.contains(e.target)) close(); });
+    api.setValue(value());
+    return api;
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /* ---------- fonts: detect what's actually installed ---------- */
+  const CANDIDATES = ['Rockwell Extra Bold','Rockwell','Rockwell Condensed','Arial Black','Arial','Arial Narrow','Arial Rounded MT Bold','Impact','Bahnschrift','Bahnschrift SemiBold','Bahnschrift Condensed','Segoe UI','Segoe UI Black','Segoe UI Semibold','Segoe Print','Segoe Script','Cooper Black','Cooper Std','Franklin Gothic Heavy','Franklin Gothic Demi','Franklin Gothic Medium','Gill Sans Ultra Bold','Gill Sans MT','Consolas','Courier New','Cascadia Code','Cascadia Mono','Lucida Console','Georgia','Times New Roman','Trebuchet MS','Verdana','Tahoma','Calibri','Cambria','Candara','Constantia','Corbel','Century Gothic','Century Schoolbook','Bookman Old Style','Garamond','Palatino Linotype','Book Antiqua','Baskerville Old Face','Bodoni MT','Bodoni MT Black','Stencil','Showcard Gothic','Berlin Sans FB','Berlin Sans FB Demi','Britannic Bold','Bauhaus 93','Broadway','Algerian','Castellar','Copperplate Gothic Bold','Elephant','Engravers MT','Eras Bold ITC','Eras Demi ITC','Felix Titling','Footlight MT Light','Gloucester MT Extra Condensed','Goudy Stout','Haettenschweiler','Harlow Solid Italic','Jokerman','Juice ITC','Kristen ITC','Magneto','Matura MT Script Capitals','Niagara Engraved','Niagara Solid','OCR A Extended','Onyx','Playbill','Poor Richard','Ravie','Snap ITC','Tw Cen MT','Tw Cen MT Condensed Extra Bold','Wide Latin','Agency FB','Comic Sans MS','Ink Free','Gabriola','Sitka Heading','Sylfaen','MV Boli','Leelawadee UI','Nirmala UI','Ebrima','Javanese Text','Microsoft Sans Serif','Lucida Sans','Lucida Bright','Lucida Handwriting','Bradley Hand ITC','Brush Script MT','Chiller','Curlz MT','Forte','Freestyle Script','French Script MT','Edwardian Script ITC','Vladimir Script','Old English Text MT','Papyrus','Pristina','Rage Italic','Script MT Bold','Viner Hand ITC','Mistral','Segoe UI Emoji',
+    'Montserrat','Montserrat Black','Poppins','Inter','Roboto','Roboto Mono','Roboto Slab','Open Sans','Lato','Oswald','Raleway','Nunito','Bebas Neue','Anton','Archivo Black','Archivo','Barlow','Barlow Condensed','Rubik','Work Sans','DM Sans','DM Mono','Space Grotesk','Space Mono','JetBrains Mono','Fira Code','Fira Sans','Source Sans Pro','Source Sans 3','Source Code Pro','Source Serif Pro','IBM Plex Sans','IBM Plex Mono','Manrope','Outfit','Sora','Lexend','Urbanist','Plus Jakarta Sans','Figtree','Kanit','Prompt','Fredoka','Fredoka One','Baloo 2','Lilita One','Luckiest Guy','Bangers','Press Start 2P','VT323','Orbitron','Audiowide','Righteous','Russo One','Black Ops One','Bungee','Bungee Inline','Chakra Petch','Exo 2','Teko','Rajdhani','Saira','Saira Condensed','Big Shoulders Display','Alfa Slab One','Abril Fatface','Playfair Display','Merriweather','Lora','Libre Baskerville','Libre Franklin','Zilla Slab','Arvo','Rockwell Std','Clarendon','Clarendon LT Std','Ultra','Bitter','Josefin Sans','Quicksand','Comfortaa','Pacifico','Lobster','Caveat','Permanent Marker','Shadows Into Light','Amatic SC','Dancing Script','Satisfy','Sacramento','Great Vibes','Kalam',
+    'Futura','Futura PT','Futura Std','Helvetica','Helvetica Neue','Avenir','Avenir Next','Gotham','Proxima Nova','Brandon Grotesque','Museo Sans','Museo Slab','Sofia Pro','Gilroy','Circular','Neue Haas Grotesk Display Pro','Neue Haas Unica','Acumin Pro','Acumin Variable Concept','Myriad Pro','Minion Pro','Adobe Garamond Pro','Adobe Caslon Pro','Trajan Pro','Trajan Pro 3','Cooper Black Std','Eurostile','Eurostile Extended','Microgramma','DIN','DIN 2014','DIN Condensed','DIN Next','Termina','Halyard Display','Obviously','Bely Display','Recoleta','Cooper Hewitt','Aktiv Grotesk','Nimbus Sans','Ubuntu','Ubuntu Mono'];
+  const detCtx = document.createElement('canvas').getContext('2d');
+  const SAMPLE = 'mmmmmmmmmmlli1WQ@0123456789';
+  function width(fam) { detCtx.font = `72px ${fam}`; return detCtx.measureText(SAMPLE).width; }
+  const base = { monospace: width('monospace'), serif: width('serif'), 'sans-serif': width('sans-serif') };
+  function installed(f) { return ['monospace', 'serif', 'sans-serif'].some(b => width(`"${f}", ${b}`) !== base[b]); }
+  let fontList = [...new Set(CANDIDATES)].filter(installed);
+  let customFonts = saved.customFonts || [];
+  function fontItems() {
+    const set = new Set(fontList), cur = state.style.font;
+    const extra = customFonts.concat(cur).filter(f => f && !set.has(f));
+    return [...new Set(extra)].map(f => ({ value: f, label: f, group: 'Added by you' }))
+      .concat(fontList.sort((a, b) => a.localeCompare(b)).map(f => ({ value: f, label: f, group: `On this PC (${fontList.length})` })));
+  }
+  const ddFont = Dropdown($('#ddFont'), {
+    items: fontItems, value: () => state.style.font, search: true, fontPreview: true, allowCustom: true, placeholder: 'Search or type a font name…',
+    onPick: v => {
+      if (!fontList.includes(v) && !customFonts.includes(v)) { customFonts = [v, ...customFonts].slice(0, 15); saved.customFonts = customFonts; }
+      set('style.font', v); refresh(); push(); saveExtras();
+    }
+  });
+  function saveExtras() { try { const o = JSON.parse(localStorage.getItem(KEY)) || {}; o.customFonts = customFonts; localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+  if ('queryLocalFonts' in window) {
+    $('#scanFonts').classList.remove('hidden');
+    $('#scanFonts').onclick = async () => {
+      try {
+        const fams = [...new Set((await window.queryLocalFonts()).map(f => f.family))];
+        fontList = [...new Set(fontList.concat(fams))];
+        ddFont.setItems(fontItems);
+        $('#fontNote').textContent = `${fontList.length} fonts found. Open the Font list to pick one.`;
+        $('#scanFonts').classList.add('hidden');
+      } catch (e) { $('#fontNote').textContent = 'Full scan isn’t allowed in OBS — showing the fonts detected above. Type any other font name in the search box.'; }
+    };
+  }
+
+  /* ---------- alert style + sound pickers ---------- */
+  const ALERTS = [['none', 'None (stay at 00:00)'], ['flash', 'Flash'], ['msg', 'Show message'], ['flashmsg', 'Flash + message']];
+  Dropdown($('#ddAlert'), {
+    items: () => ALERTS.map(([value, label]) => ({ value, label })), value: () => state.alert.type,
+    onPick: v => { set('alert.type', v); refresh(); push(); }
+  });
+  const packSounds = (window.AQ_SOUNDS || []).filter(s => s && s.file);
+  function soundItems() {
+    return [{ value: 'none', label: 'No sound' }, { value: 'chime', label: 'Chime', hint: 'built-in', group: 'Built-in' }]
+      .concat(packSounds.map(s => ({ value: 'sounds/' + s.file, label: s.name || s.file, group: 'Sound pack' })))
+      .concat([{ value: 'custom', label: state.alert.customName ? `My file: ${state.alert.customName}` : 'My own file…', group: 'Your own' },
+               { value: 'path', label: 'File path on this PC…', group: 'Your own' }]);
+  }
+  const ddSound = Dropdown($('#ddSound'), {
+    items: soundItems, value: () => state.alert.sound,
+    onPick: v => { set('alert.sound', v); refresh(); push(); if (v === 'custom' && !customSound) $('#fileInput').click(); }
+  });
+  $('#pickFile').onclick = () => $('#fileInput').click();
+  $('#fileInput').onchange = () => {
+    const f = $('#fileInput').files[0]; if (!f) return;
+    if (f.size > 3.5 * 1024 * 1024) { soundNote('That file is over 3.5 MB — trim it, or put it somewhere on your PC and use “File path on this PC” instead.'); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      customSound = r.result; state.alert.customName = f.name; state.alert.sound = 'custom';
+      try { localStorage.setItem(SKEY, customSound); } catch (e) { soundNote('Loaded for this session, but it’s too big to remember after OBS restarts. A shorter clip or a file path will stick.'); }
+      pushSound(); ddSound.setItems(soundItems); refresh(); push();
+    };
+    r.readAsDataURL(f);
+  };
+  function soundNote(t) { $('#soundNote').textContent = t; $('#soundNote').classList.toggle('hidden', !t); }
+  $('#previewSound').onclick = () => AQ.playSound(state.alert, customSound);
+
+  /* ---------- bind every setting control ---------- */
+  function refresh() {
+    $$('[data-key]').forEach(el => {
+      const v = get(el.dataset.key);
+      if (el.classList.contains('seg')) el.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === String(v)));
+      else if (el.type === 'checkbox') el.checked = !!v;
+      else if (document.activeElement !== el) el.value = v;
+    });
+    $$('#align button').forEach(b => b.classList.toggle('on', b.dataset.v === state.style.align));
+    $$('.val').forEach(el => el.textContent = get(el.dataset.for) + (el.dataset.unit || ''));
+    $('#radiusRow').classList.toggle('dim', state.style.corners !== 'round');
+    $$('.strokeDep').forEach(el => el.classList.toggle('dim', !state.style.stroke));
+    $$('.shadowDep').forEach(el => el.classList.toggle('dim', !state.style.shadow));
+    const at = state.alert.type, snd = state.alert.sound;
+    $('#msgRow').classList.toggle('dim', !(at === 'msg' || at === 'flashmsg'));
+    $('#flashRow').classList.toggle('dim', !(at === 'flash' || at === 'flashmsg'));
+    $('#customRow').classList.toggle('hidden', snd !== 'custom');
+    $('#pickFile').textContent = state.alert.customName ? 'Choose a different file…' : 'Choose file…';
+    $('#pathRow').classList.toggle('hidden', snd !== 'path');
+    $$('.soundDep').forEach(el => el.classList.toggle('dim', snd === 'none'));
+    if (snd !== 'custom') soundNote(snd === 'path' ? 'Paste the full path, e.g. D:\\Sounds\\ding.mp3 (right-click the file → Copy as path).' : '');
+    $('#setRow label').textContent = state.timer.mode === 'down' ? 'Start from' : 'Start at';
+    ddFont.setValue(state.style.font);
+  }
+  $$('#align button').forEach(b => b.onclick = () => { state.style.align = b.dataset.v; refresh(); push(); });
+  $$('[data-key]').forEach(el => {
+    if (el.classList.contains('seg')) {
+      el.querySelectorAll('button').forEach(b => b.onclick = () => {
+        const v = /^\d+$/.test(b.dataset.v) ? +b.dataset.v : b.dataset.v;
+        if (el.dataset.key === 'timer.mode' && state.timer.mode !== v) { set('timer.mode', v); reset(); }
+        else set(el.dataset.key, v);
+        refresh(); push();
+      });
+      return;
+    }
+    const handler = () => {
+      let v = el.type === 'checkbox' ? el.checked : el.value;
+      if (el.type === 'range') v = +v;
+      set(el.dataset.key, v); refresh(); push();
+    };
+    el.addEventListener('input', handler); el.addEventListener('change', handler);
+  });
+
+  /* ---------- panel highlight color (this panel only, not the overlay) ---------- */
+  const ACCENT_KEY = 'aq-stream-timer-accent', DEFAULT_ACCENT = '#9b44b8';
+  const PRESETS = ['#9b44b8', '#e0457b', '#ef5d6c', '#f08a24', '#e8b923', '#3ecf8e', '#2bb5c9', '#4f7cf0'];
+  function normHex(v) {
+    v = (v || '').trim().replace(/^#?/, '#');
+    if (/^#[0-9a-f]{3}$/i.test(v)) v = '#' + v.slice(1).replace(/./g, '$&$&');
+    return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+  }
+  const rgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const toHex = a => '#' + a.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('');
+  const mix = (h, to, amt) => { const a = rgb(h), b = rgb(to); return toHex(a.map((x, i) => x + (b[i] - x) * amt)); };
+  const lum = h => rgb(h).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; })
+                         .reduce((s, v, i) => s + v * [.2126, .7152, .0722][i], 0);
+  let accent = DEFAULT_ACCENT;
+  function applyAccent(h, save = true) {
+    accent = h;
+    const L = lum(h), root = document.documentElement.style;
+    const darkText = (L + .05) / .058 > 1.05 / (L + .05);       // whichever text color reads better on it
+    root.setProperty('--accent', h);
+    root.setProperty('--accent-hi', darkText ? mix(h, '#000000', .12) : mix(h, '#ffffff', .15));
+    root.setProperty('--on-accent', darkText ? '#14151a' : '#ffffff');
+    root.setProperty('--accent-text', L < .2 ? mix(h, '#ffffff', .45) : h);   // stays readable on the dark panel
+    root.setProperty('--accent-soft', mix(h, '#ffffff', .6));
+    $('#accentPick').value = h;
+    if (document.activeElement !== $('#accentHex')) $('#accentHex').value = h.toUpperCase();
+    $('#accentHex').classList.remove('bad');
+    $$('#swatches button').forEach(b => b.classList.toggle('on', b.dataset.c === h));
+    if (save) try { localStorage.setItem(ACCENT_KEY, h); } catch (e) {}
+  }
+  $('#swatches').innerHTML = PRESETS.map(c => `<button type="button" data-c="${c}" title="${c.toUpperCase()}" style="background:${c}"></button>`).join('');
+  $$('#swatches button').forEach(b => b.onclick = () => applyAccent(b.dataset.c));
+  $('#accentPick').addEventListener('input', e => applyAccent(e.target.value.toLowerCase()));
+  $('#accentHex').addEventListener('input', e => {
+    const h = normHex(e.target.value);
+    if (h) applyAccent(h); else e.target.classList.add('bad');
+  });
+  $('#accentHex').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+  $('#accentHex').addEventListener('blur', e => { e.target.value = accent.toUpperCase(); e.target.classList.remove('bad'); });
+  $('#accentReset').onclick = () => applyAccent(DEFAULT_ACCENT);
+  let storedAccent = null; try { storedAccent = normHex(localStorage.getItem(ACCENT_KEY)); } catch (e) {}
+  applyAccent(storedAccent || DEFAULT_ACCENT, false);
+
+  fillSetFields(); refresh(); syncTransport();
+  if (!creds.pw) $('#connCard').open = true;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stream Timer Overlay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+  #box {
+    display: inline-flex; align-items: center; justify-content: center;
+    box-sizing: border-box; border-style: solid; white-space: nowrap; flex: 0 0 auto;
+    transform-origin: center; line-height: 1;
+  }
+  #txt { display: inline-flex; align-items: baseline; }
+  #txt .d { display: inline-block; text-align: center; }
+  #txt .sep { display: inline-block; }
+  #box.flash { animation: flash .5s steps(1, end) 10; }
+  @keyframes flash { 50% { background-color: var(--flash); border-color: var(--flash); color: var(--flashText); } }
+  #box.pop { animation: pop .45s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes pop { from { transform: scale(var(--s,1)) scale(.85); } }
+</style>
+</head>
+<body>
+<div id="stage"><div id="box"><span id="txt"></span></div></div>
+<script>
+/* ===== Stream Timer — shared core (inlined into both files) ===== */
+const AQ = (() => {
+  /* ---------- SHA-256 (pure JS, needed for OBS WebSocket auth) ---------- */
+  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  function sha256(bytes) {
+    const l = bytes.length, bitLen = l * 8;
+    const n = ((l + 9 + 63) >> 6) << 6;
+    const m = new Uint8Array(n); m.set(bytes); m[l] = 0x80;
+    const dv = new DataView(m.buffer);
+    dv.setUint32(n - 4, bitLen >>> 0); dv.setUint32(n - 8, Math.floor(bitLen / 2 ** 32));
+    let h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+    const w = new Uint32Array(64);
+    const r = (x, k) => (x >>> k) | (x << (32 - k));
+    for (let o = 0; o < n; o += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = r(w[i-15],7) ^ r(w[i-15],18) ^ (w[i-15] >>> 3);
+        const s1 = r(w[i-2],17) ^ r(w[i-2],19) ^ (w[i-2] >>> 10);
+        w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+      }
+      let [a,b,c,d,e,f,g,hh] = h;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (hh + (r(e,6) ^ r(e,11) ^ r(e,25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+        const t2 = ((r(a,2) ^ r(a,13) ^ r(a,22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+        hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      h = [h[0]+a,h[1]+b,h[2]+c,h[3]+d,h[4]+e,h[5]+f,h[6]+g,h[7]+hh].map(x => x >>> 0);
+    }
+    const out = new Uint8Array(32); const odv = new DataView(out.buffer);
+    h.forEach((x, i) => odv.setUint32(i * 4, x)); return out;
+  }
+  const utf8 = s => new TextEncoder().encode(s);
+  const b64 = bytes => { let s = ''; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+  const obsAuth = (pw, salt, challenge) => b64(sha256(utf8(b64(sha256(utf8(pw + salt))) + challenge)));
+
+  /* ---------- Defaults ---------- */
+  const DEFAULTS = {
+    timer: { mode: 'down', duration: 5 * 60000, running: false, startedAt: 0, accumulated: 0 },
+    style: {
+      corners: 'round', radius: 28,
+      bg: '#ffffff', bgOpacity: 100,
+      stroke: true, strokeColor: '#84299a', strokeWidth: 8,
+      shadow: false, shadowOpacity: 40,
+      font: 'Rockwell Extra Bold', weight: 900, textColor: '#000000',
+      size: 96, padX: 48, padY: 14,
+      align: 'mc', edge: 20,
+      units: { h: true, m: true, s: true, ms: true }
+    },
+    alert: { type: 'flashmsg', message: "TIME'S UP!", flashColor: '#84299a', sound: 'chime', volume: 80, soundPath: '', customName: '' }
+  };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  function merge(base, over) {
+    const out = clone(base);
+    (function m(a, b) { for (const k in b) {
+      if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object') m(a[k], b[k]);
+      else if (k in a) a[k] = b[k];
+    } })(out, over || {});
+    return out;
+  }
+
+  /* ---------- Time ---------- */
+  function elapsed(t, now = Date.now()) { return t.accumulated + (t.running ? now - t.startedAt : 0); }
+  function value(t, now) {  // ms to show
+    const e = elapsed(t, now);
+    return t.mode === 'down' ? Math.max(0, t.duration - e) : e;
+  }
+  function format(ms, units, mode) {
+    let u = { ...units }; if (!u.h && !u.m && !u.s && !u.ms) u.s = true;
+    if (u.ms && !u.s && !u.m && !u.h) u.s = true;
+    const g = u.ms ? 10 : u.s ? 1000 : u.m ? 60000 : 3600000;
+    ms = mode === 'down' ? Math.ceil(ms / g) * g : Math.floor(ms / g) * g;
+    const p2 = n => String(n).padStart(2, '0');
+    // leftmost shown unit carries the total; the rest wrap normally
+    const order = ['h','m','s'].filter(k => u[k]);
+    const sizes = { h: 3600000, m: 60000, s: 1000 }, mods = { m: 60, s: 60 };
+    const out = order.map((k, i) => p2(i === 0 ? Math.floor(ms / sizes[k]) : Math.floor(ms / sizes[k]) % mods[k]));
+    let s = out.join(':');
+    if (u.ms) s += '.' + p2(Math.floor((ms % 1000) / 10));
+    return s;
+  }
+
+  /* ---------- Message bus: OBS WebSocket + same-browser fallbacks ---------- */
+  const CH = 'aq-stream-timer';
+  class Bus {
+    constructor({ pw = '', port = 4455, onMessage = () => {}, onStatus = () => {} }) {
+      Object.assign(this, { pw, port, onMessage, onStatus, ws: null, ok: false, rid: 0, closed: false });
+      try { this.bc = new BroadcastChannel(CH); this.bc.onmessage = e => this.onMessage(e.data); } catch (e) {}
+      try { addEventListener('storage', e => { if (e.key === CH && e.newValue) this.onMessage(JSON.parse(e.newValue)); }); } catch (e) {}
+      this.connect();
+    }
+    setCreds(pw, port) { this.pw = pw; this.port = port; try { this.ws && this.ws.close(); } catch (e) {} this.connect(); }
+    connect() {
+      clearTimeout(this.retry);
+      if (!this.pw && this.pw !== null) { this.onStatus('no-password'); }
+      let ws;
+      try { ws = new WebSocket('ws://127.0.0.1:' + this.port); } catch (e) { this.onStatus('offline'); return; }
+      this.ws = ws; this.ok = false;
+      ws.onmessage = async ev => {
+        const m = JSON.parse(ev.data);
+        if (m.op === 0) {
+          const d = { rpcVersion: 1, eventSubscriptions: 1 };
+          if (m.d.authentication) {
+            if (!this.pw) { this.onStatus('no-password'); ws.close(); return; }
+            d.authentication = obsAuth(this.pw, m.d.authentication.salt, m.d.authentication.challenge);
+          }
+          ws.send(JSON.stringify({ op: 1, d }));
+        } else if (m.op === 2) {
+          this.ok = true; this.onStatus('connected'); this.onReady && this.onReady();
+        } else if (m.op === 5 && m.d.eventType === 'CustomEvent' && m.d.eventData && m.d.eventData.aqTimer) {
+          this.onMessage(m.d.eventData.aqTimer);
+        }
+      };
+      ws.onclose = ev => {
+        this.ok = false;
+        if (ev.code === 4009) { this.onStatus('auth-failed'); this.retry = setTimeout(() => this.connect(), 10000); }
+        else { this.onStatus(this.pw ? 'offline' : 'no-password'); this.retry = setTimeout(() => this.connect(), 3000); }
+      };
+      ws.onerror = () => {};
+    }
+    send(msg, { local = true } = {}) {
+      if (this.ok) this.ws.send(JSON.stringify({ op: 6, d: { requestType: 'BroadcastCustomEvent', requestId: 'aq' + (++this.rid), requestData: { eventData: { aqTimer: msg } } } }));
+      if (local) {
+        try { this.bc && this.bc.postMessage(msg); } catch (e) {}
+        try { if (msg.t === 'state') localStorage.setItem(CH, JSON.stringify(msg)); } catch (e) {}
+      }
+    }
+  }
+  function storedState() { try { const m = JSON.parse(localStorage.getItem(CH)); return m && m.state; } catch (e) { return null; } }
+
+  /* ---------- Alert sounds (shared by overlay + panel preview) ---------- */
+  function fileUrl(p) {
+    p = (p || '').trim().replace(/^"|"$/g, '');
+    if (!p) return '';
+    if (/^(file|https?):/i.test(p)) return p;
+    if (/^[a-z]:[\\/]/i.test(p) || p.startsWith('\\\\')) return 'file:///' + encodeURI(p.replace(/\\/g, '/')).replace(/#/g, '%23');
+    return encodeURI(p).replace(/#/g, '%23');   // relative, e.g. sounds/bell.mp3
+  }
+  let actx;
+  function chime(vol) {
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = actx.currentTime;
+      [880, 1175, 1568].forEach((f, i) => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0, t0 + i * .18); g.gain.linearRampToValueAtTime(.4 * vol, t0 + i * .18 + .02);
+        g.gain.exponentialRampToValueAtTime(.001, t0 + i * .18 + .6);
+        o.connect(g).connect(actx.destination); o.start(t0 + i * .18); o.stop(t0 + i * .18 + .65);
+      });
+    } catch (e) {}
+  }
+  let current;
+  function playSound(alert, customData) {
+    const vol = Math.max(0, Math.min(1, (alert.volume ?? 80) / 100));
+    try { current && current.pause(); } catch (e) {}
+    const id = alert.sound;
+    if (!id || id === 'none') return;
+    if (id === 'chime') return chime(vol);
+    const src = id === 'custom' ? customData : id === 'path' ? fileUrl(alert.soundPath) : fileUrl(id);
+    if (!src) return;
+    try { current = new Audio(src); current.volume = vol; current.play().catch(() => {}); } catch (e) {}
+  }
+
+  return { fileUrl, playSound, DEFAULTS, merge, clone, elapsed, value, format, Bus, storedState, sha256, obsAuth };
+})();
+
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const embed = qs.has('embed');            // used by the control panel's live preview
+  let state = AQ.merge(AQ.DEFAULTS, AQ.storedState() || {});
+  const box = document.getElementById('box'), txt = document.getElementById('txt');
+  const stage = document.getElementById('stage');
+  let digitW = 0, lastStr = '', lastShape = '', alerting = false, prevVal = null, customSound = '', testUntil = 0;
+  const ALIGN = { t: 'flex-start', m: 'center', b: 'flex-end', l: 'flex-start', c: 'center', r: 'flex-end' };
+  const ORIGIN = { t: 'top', m: 'center', b: 'bottom', l: 'left', c: 'center', r: 'right' };
+
+  function hexA(hex, pct) {
+    const h = hex.replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h, 16);
+    return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${pct / 100})`;
+  }
+  function measureDigits(s) {
+    const c = document.createElement('canvas').getContext('2d');
+    c.font = `${s.weight} ${s.size}px "${s.font}", "Arial Black", sans-serif`;
+    let w = 0; for (let i = 0; i < 10; i++) w = Math.max(w, c.measureText(String(i)).width);
+    return Math.ceil(w);
+  }
+  function applyStyle() {
+    const s = state.style, b = box.style;
+    b.fontFamily = `"${s.font}", "Arial Black", sans-serif`;
+    b.fontWeight = s.weight; b.fontSize = s.size + 'px'; b.color = s.textColor;
+    b.padding = `${s.padY}px ${s.padX}px`;
+    b.backgroundColor = hexA(s.bg, s.bgOpacity);
+    b.borderWidth = s.stroke ? s.strokeWidth + 'px' : '0';
+    b.borderColor = s.strokeColor;
+    b.borderRadius = s.corners === 'round' ? s.radius + 'px' : '0';
+    b.filter = s.shadow ? `drop-shadow(0 ${Math.round(s.size * .06)}px ${Math.round(s.size * .12)}px rgba(0,0,0,${s.shadowOpacity / 100}))` : 'none';
+    const al = /^[tmb][lcr]$/.test(s.align) ? s.align : 'mc';
+    stage.style.alignItems = ALIGN[al[0]]; stage.style.justifyContent = ALIGN[al[1]];
+    stage.style.padding = (embed ? 6 : s.edge) + 'px';
+    b.transformOrigin = `${ORIGIN[al[0]]} ${ORIGIN[al[1]]}`;
+    b.setProperty('--flash', state.alert.flashColor);
+    b.setProperty('--flashText', s.bg);
+    digitW = measureDigits(s); lastShape = ''; lastStr = '';
+    // fonts may finish loading after first paint
+    document.fonts && document.fonts.load(`${s.weight} ${s.size}px "${s.font}"`).then(() => { digitW = measureDigits(state.style); lastShape = ''; lastStr = ''; }).catch(() => {});
+  }
+  function render(str) {
+    const shape = str.replace(/\d/g, '0') + digitW;
+    if (shape !== lastShape) {             // rebuild spans only when layout changes
+      txt.innerHTML = '';
+      for (const ch of str) {
+        const sp = document.createElement('span');
+        sp.className = /\d/.test(ch) ? 'd' : 'sep';
+        if (sp.className === 'd') sp.style.width = digitW + 'px';
+        txt.appendChild(sp);
+      }
+      lastShape = shape;
+    }
+    const kids = txt.children;
+    for (let i = 0; i < str.length; i++) if (kids[i].textContent !== str[i]) kids[i].textContent = str[i];
+    lastStr = str;
+  }
+  function chime() { if (!embed) AQ.playSound(state.alert, customSound); }
+  function startAlert() {
+    alerting = true;
+    const a = state.alert;
+    if (a.type === 'flash' || a.type === 'flashmsg') { box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash'); }
+    if (a.type === 'msg' || a.type === 'flashmsg') { box.classList.remove('pop'); void box.offsetWidth; box.classList.add('pop'); }
+    chime();
+  }
+  function stopAlert() { alerting = false; box.classList.remove('flash', 'pop'); }
+  function fit() {
+    if (!embed) return;
+    box.style.transform = 'none';
+    const r = box.getBoundingClientRect();
+    const s = Math.min(1, (innerWidth - 14) / r.width, (innerHeight - 14) / r.height);
+    box.style.setProperty('--s', s); box.style.transform = `scale(${s})`;
+  }
+
+  function tick() {
+    const t = state.timer, v = AQ.value(t);
+    if (testUntil && Date.now() > testUntil) { testUntil = 0; if (v > 0 || t.mode !== 'down') stopAlert(); }
+    if (testUntil) { /* showing a test alert */ }
+    else if (t.mode === 'down' && t.duration > 0) {
+      if (prevVal !== null && prevVal > 0 && v === 0 && !alerting) startAlert();
+      if (v > 0 && alerting) stopAlert();
+    } else if (alerting) stopAlert();
+    prevVal = v;
+    const showMsg = alerting && (state.alert.type === 'msg' || state.alert.type === 'flashmsg');
+    const str = showMsg ? null : AQ.format(v, state.style.units, t.mode);
+    if (showMsg) { if (lastStr !== '\u0000msg' + state.alert.message) { txt.textContent = state.alert.message; lastShape = ''; lastStr = '\u0000msg' + state.alert.message; } }
+    else if (str !== lastStr) render(str);
+    fit();
+    requestAnimationFrame(tick);
+  }
+
+  function receive(msg) {
+    if (msg && msg.t === 'sound') { customSound = msg.data || ''; return; }
+    if (!msg || msg.t !== 'state') return;
+    const old = JSON.stringify(state.style) + JSON.stringify(state.alert);
+    state = AQ.merge(AQ.DEFAULTS, msg.state);
+    if (JSON.stringify(state.style) + JSON.stringify(state.alert) !== old) applyStyle();
+    if (msg.test) { testUntil = Date.now() + 5000; startAlert(); }
+  }
+
+  applyStyle();
+  if (embed) {
+    addEventListener('message', e => receive(e.data));
+  } else {
+    const bus = new AQ.Bus({ pw: qs.get('pw') || '', port: +(qs.get('port') || 4455), onMessage: receive });
+    bus.onReady = () => bus.send({ t: 'hello' }, { local: false });
+    try { bus.bc && bus.bc.postMessage({ t: 'hello' }); } catch (e) {}
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

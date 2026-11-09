@@ -1,0 +1,151 @@
+==========================================================
+  STREAM TIMER for OBS — READ BEFORE USE
+==========================================================
+
+Hi! I'm Bears, the creator of Stream Timer for OBS.
+
+I wanted to make a timer plugin that's easy and simple to use,
+so you can set it up in a few minutes and get back to streaming.
+The instructions are below, but if you run into any issues or
+have ideas to make it better, please let me know! You can open
+an issue on GitHub or email me at  bearsinalaska@gmail.com
+
+Thanks for using it and happy streaming!  — Bears
+
+
+A customizable on-screen timer for OBS. It comes in two parts:
+
+  • timer-control.html  — the control panel. Lives inside OBS as a dock.
+                          Play/pause, set the time, and style everything here.
+  • timer-overlay.html  — the timer your audience sees. Added as a Browser Source.
+  • sounds\             — alert sounds for when the timer finishes.
+
+Keep all of these together in the same folder.
+It does NOT change your scenes or touch anything else in OBS.
+
+
+----------------------------------------------------------
+  BEFORE YOU START
+----------------------------------------------------------
+  • OBS Studio 28 or newer (WebSocket is built in).
+  • Unzip the folder somewhere permanent first (for example, your
+    Documents folder). If you move it later, you'll need to redo
+    steps 2 and 4 with the new location.
+
+
+----------------------------------------------------------
+  SETUP (about 3 minutes)
+----------------------------------------------------------
+
+STEP 1 — Turn on OBS WebSocket and get the password
+  1. In OBS, go to  Tools → WebSocket Server Settings.
+  2. Check  "Enable WebSocket server".
+  3. Leave  "Enable Authentication"  checked.
+  4. Click  "Show Connect Info"  and copy the  Server Password.
+  5. Click OK.
+
+STEP 2 — Add the control panel as a dock
+  1. Get the file's address: drag  timer-control.html  into Chrome or
+     Edge and copy what's in the address bar. It will look like:
+        file:///C:/Users/YourName/Documents/Stream%20Timer/timer-control.html
+  2. In OBS, go to  Docks → Custom Browser Docks…
+  3. Dock Name:  Stream Timer
+     URL:        paste the address from step 1
+  4. Click Apply, then Close. The panel appears — drag it wherever
+     you like in your OBS layout.
+
+STEP 3 — Connect the panel
+  1. In the panel, open the  CONNECTION  section at the bottom.
+  2. Paste the WebSocket password from Step 1.
+  3. Click  "Save & connect".  The dot at the top turns GREEN and says
+     "Connected to OBS".
+
+STEP 4 — Add the timer to your scene
+  1. In the panel's CONNECTION section, click  "Copy overlay URL".
+  2. In OBS, select your scene and add a new source:  + → Browser.
+  3. In the Browser Source properties:
+       • UNCHECK  "Local file"   (important!)
+       • URL:     paste the overlay URL
+       • Width:   1920    Height: 1080   (your full canvas size)
+       • CHECK  "Control audio via OBS"  if you want the alert sound
+         to be heard on stream.
+  4. Click OK.
+
+Done! Press Play in the panel to test it.
+
+
+----------------------------------------------------------
+  USING IT
+----------------------------------------------------------
+  Play / Pause / Reset    Main controls at the top of the panel.
+  −1m / +1m / +5m / +10m  Add or remove time while it's running.
+  Test alert              Shows the "time's up" alert for 5 seconds.
+  Timer                   Countdown or Count up, starting time, and
+                          which units to show (HH : MM : SS . MS).
+  Position                Pick where the timer sits on screen. It grows
+                          away from that point, so it never gets cut off.
+  Frame                   Corners, background color/opacity, stroke,
+                          drop shadow, and padding.
+  Text                    Font, weight, color, and size. If your font
+                          isn't in the list, type its exact name in the
+                          search box and press Enter.
+  Timer done alert        Flash, message, or both, plus the alert sound.
+  UI Color                Change the highlight color of this control panel
+                          (Play button, selected options, etc). Pick a
+                          preset, use the color wheel, or type a hex code.
+                          Only affects the panel, not the on-stream timer.
+
+All settings save automatically and come back next time you open OBS.
+
+
+----------------------------------------------------------
+  ALERT SOUNDS
+----------------------------------------------------------
+  Pick a sound in  Timer done alert → Sound:
+    • Chime                 Built in.
+    • Sound pack            Files in the "sounds" folder (see below).
+    • My own file…          Choose any audio file up to 3.5 MB.
+    • File path on this PC… Paste a full path, e.g.  D:\Sounds\ding.mp3
+                            (Shift + right-click a file → "Copy as path").
+
+  To add sounds to the pack:
+    1. Copy .mp3 / .wav / .ogg files into the  sounds  folder.
+    2. Open  sounds\sounds.js  in Notepad and add a line for each file:
+          { name: 'Bell', file: 'bell.mp3' },
+    3. Save, then right-click the panel → Reload.
+
+
+----------------------------------------------------------
+  TROUBLESHOOTING
+----------------------------------------------------------
+  Dot is red / "OBS WebSocket offline"
+    → Make sure "Enable WebSocket server" is checked (Step 1).
+
+  "Wrong password"
+    → Re-copy the password from Show Connect Info and click
+      Save & connect again. If you change the password later,
+      also redo Step 4 (the overlay URL includes it).
+
+  Panel works but the timer doesn't move on screen
+    → Make sure "Local file" is UNCHECKED in the Browser Source and
+      the URL came from "Copy overlay URL". Then click
+      "Refresh cache of current page" in the source properties.
+
+  The panel or timer looks out of date after an update
+    → Right-click the panel → Reload, and click "Refresh cache of
+      current page" in the Browser Source.
+
+  The alert sound plays on my PC but not on stream
+    → Check "Control audio via OBS" in the Browser Source, and make
+      sure its fader isn't muted in the Audio Mixer.
+
+
+----------------------------------------------------------
+  PRIVACY / SHARING
+----------------------------------------------------------
+  • Your password and style settings are saved inside your own OBS,
+    not in these files. Sharing this folder never shares them.
+  • Do NOT share your overlay URL. It contains your WebSocket
+    password. Anyone setting this up copies their own URL.
+
+==========================================================
